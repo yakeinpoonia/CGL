@@ -1,156 +1,291 @@
+/* 
+ * Airport Simulation Program
+ * 
+ * Features:
+ * 1. Right-click menu with options to land a plane, take off a plane, and quit the program.
+ * 2. Planes can be in landing or taking off states.
+ * 3. Basic rendering of an airport with runways and ground.
+ * 
+ * Compile with:
+ * g++ airport_simulation.cpp -o airport_simulation -lGL -lGLU -lglut
+ */
+
 #include <GL/glut.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdio.h>
+#include <vector>
+#include <cmath>
+#include <cstdlib>
 
-// Static variables
-static double x[10] = {0}, x2 = 0.0, r1 = 0.0;
-static double yaxis[10] = {-15, -15, -15, -15, -15, -15, -15, -15, -15, -15};
-static double max = 0;
-static bool takeOff = false;
+// Define constants for window size
+const int WINDOW_WIDTH = 800;
+const int WINDOW_HEIGHT = 600;
 
-void stroke_output(GLfloat x, GLfloat y, const char *format, ...) {
-    va_list args;
-    char buffer[200], *p;
-    va_start(args, format);
-    vsprintf(buffer, format, args);
-    va_end(args);
-    glPushMatrix();
-    glTranslatef(-2.5, y, 0);
-    glScaled(0.003, 0.005, 0.005);
-    for (p = buffer; *p; p++) {
-        glutStrokeCharacter(GLUT_STROKE_ROMAN, *p);
+// Define plane states
+enum PlaneState { LANDING, TAKING_OFF };
+
+// Structure to represent a plane
+struct Plane {
+    PlaneState state;
+    float x, y, z;          // Position
+    float angle;            // Rotation angle for movement
+    float speed;            // Movement speed
+    bool active;            // Is the plane active in the scene
+
+    Plane(PlaneState s) : state(s), angle(0.0f), speed(0.1f), active(true) {
+        if (state == LANDING) {
+            // Starting position for landing: high altitude, off to one side
+            x = -20.0f;
+            y = 10.0f;
+            z = 20.0f;
+        }
+        else { // TAKING_OFF
+            // Starting position for takeoff: on the runway
+            x = 0.0f;
+            y = 0.0f;
+            z = 0.0f;
+        }
     }
-    glPopMatrix();
-}
+};
 
-// Runway strip
-void strip(float x1) {
-    glPushMatrix();
-    glRotatef(-65, 0, 1, 0);
-    glColor3f(1, 1, 1);
-    glTranslatef(x1, -3.5, 7.8);
-    glScaled(1, 0.15, 0.1);
-    glutSolidCube(1);
-    glPopMatrix();
-}
+// Vector to hold all active planes
+std::vector<Plane> planes;
 
-// Draw plane
-void drawPlane(float y1) {
-    glPushMatrix();
-    // Main Body
-    glPushMatrix();
-    glScalef(.3, 0.3, 1.5);
-    if (y1 <= 15) glColor3f(1, 1.0, 0.5);
-    if (y1 >= 15) glColor3f(1, 0.3, 0.5);
-    glutSolidSphere(2.0, 50, 50);
-    glPopMatrix();
-
-    // Plane details (fins, tail, wheels, etc.)
-    // --- Add other plane parts similarly (as in original code) ---
-    glPopMatrix();
-}
-
-// Animate plane
-void animate(float y1, float x1) {
-    glPushMatrix();
-    if (y1 <= -2) {
-        glTranslatef(5.5 + y1, 3, 0);
-        glRotatef(-90, 0, 1, 0);
-    }
-    if (y1 >= 15 && takeOff) {
-        glRotatef(140, 0, 1, 0);
-        if (y1 >= 15 && y1 <= 20) glTranslatef(2 + 15 - y1, -3, -3);
-        if (y1 >= 20) glTranslatef(2 + 15 - y1, -3 - 20 + y1, -3);
-    }
-
-    if (y1 >= -2 && y1 <= 2) glTranslatef(3.0, 3.0, 0.0);
-    if (y1 >= 2 && y1 <= 6.5) glTranslatef(3, 3 - y1 + 2, 0);
-    if (y1 >= 6.5 && y1 <= 8.2) glTranslatef(3 - y1 + 6.5, 3 - y1 + 2, 0);
-    if (y1 >= 8.2 && y1 <= 15) glTranslatef(3 - y1 + 6.5, 3 - 8.2 + 2, 0);
-
-    if (y1 >= -2) glRotatef(x1, 0, 1, 0);
-
-    glPushMatrix();
-    glTranslatef(1, 0, 0);
-    glScaled(0.3, 0.3, 0.15);
-    if (y1 <= 8.2 && yaxis[0] >= -2) glRotatef(15, 0, 0, 1);
-
-    if (y1 <= 15) drawPlane(y1);
-    if (y1 >= 15 && takeOff) drawPlane(y1);
-
-    glPopMatrix();
-    glPopMatrix();
-}
-
-// Airport layout
-void airport() {
-    glColor3f(0, 1, 0);
-    glBegin(GL_POLYGON);
-    glVertex3f(-19, -3.5, 19);
-    glVertex3f(-19, -3.5, -19);
-    glVertex3f(19, -3.5, -19);
-    glVertex3f(19, -3.5, 19);
+// Function to draw the airport
+void drawAirport() {
+    // Draw Ground
+    glColor3f(0.3f, 0.9f, 0.3f); // Green ground
+    glBegin(GL_QUADS);
+        glVertex3f(-30.0f, -1.0f, -30.0f);
+        glVertex3f(-30.0f, -1.0f, 30.0f);
+        glVertex3f(30.0f, -1.0f, 30.0f);
+        glVertex3f(30.0f, -1.0f, -30.0f);
     glEnd();
 
-    strip(-2);
-    strip(0);
-    strip(2);
-    strip(4);
-    strip(6);
-    strip(8);
-    strip(10);
+    // Draw Runway
+    glColor3f(0.7f, 0.7f, 0.7f); // Grey runway
+    glBegin(GL_QUADS);
+        glVertex3f(-10.0f, 0.0f, -1.0f);
+        glVertex3f(-10.0f, 0.0f, 1.0f);
+        glVertex3f(10.0f, 0.0f, 1.0f);
+        glVertex3f(10.0f, 0.0f, -1.0f);
+    glEnd();
 
-    // --- Add additional airport details here ---
+    // Draw Runway Center Line
+    glColor3f(1.0f, 1.0f, 1.0f); // White center line
+    glLineWidth(2.0f);
+    glBegin(GL_LINES);
+        for(float i = -10.0f; i <= 10.0f; i += 2.0f) {
+            glVertex3f(i, 0.01f, -0.5f);
+            glVertex3f(i + 1.0f, 0.01f, 0.5f);
+        }
+    glEnd();
 }
 
-void controller() {
+// Function to draw a simple plane
+void drawPlane() {
+    // Main Body
+    glColor3f(0.8f, 0.0f, 0.0f); // Red body
+    glPushMatrix();
+        glScalef(1.0f, 0.2f, 0.5f);
+        glutSolidCube(2.0f);
+    glPopMatrix();
+
+    // Wings
+    glColor3f(0.0f, 0.0f, 0.8f); // Blue wings
+    glPushMatrix();
+        glTranslatef(0.0f, 0.1f, 0.0f);
+        glScalef(3.0f, 0.05f, 1.0f);
+        glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // Tail
+    glColor3f(0.0f, 0.0f, 0.8f); // Blue tail
+    glPushMatrix();
+        glTranslatef(-0.8f, 0.1f, -0.5f);
+        glRotatef(45.0f, 0.0f, 1.0f, 0.0f);
+        glScalef(0.5f, 0.05f, 0.3f);
+        glutSolidCube(1.0f);
+    glPopMatrix();
+
+    // Propeller
+    glColor3f(0.0f, 0.0f, 0.0f); // Black propeller
+    glPushMatrix();
+        glTranslatef(1.0f, 0.2f, 0.0f);
+        glRotatef(glutGet(GLUT_ELAPSED_TIME) / 10.0f, 0.0f, 0.0f, 1.0f); // Rotate propeller
+        glBegin(GL_LINES);
+            glVertex3f(-0.5f, 0.0f, 0.0f);
+            glVertex3f(0.5f, 0.0f, 0.0f);
+            glVertex3f(0.0f, -0.5f, 0.0f);
+            glVertex3f(0.0f, 0.5f, 0.0f);
+        glEnd();
+    glPopMatrix();
+}
+
+// Display callback
+void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
-    glTranslatef(0.0, 0.0, -25.0);
-    animate(yaxis[0], x[0]);
 
-    for (int i = 0; i < max; i++) {
-        if (yaxis[i] >= -5) {
-            animate(yaxis[i + 1], x[i + 1]);
-            if (yaxis[i + 1] >= -2 && yaxis[i + 1] <= 6.7) x[i + 1] += 3.5;
-            if (yaxis[i + 1] <= 0) yaxis[i + 1] += 0.15;
-            else if (yaxis[i + 1] >= 0 && yaxis[i + 1] <= 6.7) yaxis[i + 1] += 0.06;
-            else if (yaxis[i + 1] >= 6.7 && yaxis[i + 1] <= 15) yaxis[i + 1] += 0.1;
-            else if (takeOff && yaxis[i + 1] <= 30) yaxis[i + 1] += 0.1;
+    // Set camera
+    gluLookAt(0.0f, 15.0f, 30.0f,   // Eye position
+              0.0f, 0.0f, 0.0f,     // Look at point
+              0.0f, 1.0f, 0.0f);    // Up vector
+
+    // Draw the airport
+    drawAirport();
+
+    // Draw all active planes
+    for(auto &plane : planes) {
+        if(plane.active) {
+            glPushMatrix();
+                glTranslatef(plane.x, plane.y, plane.z);
+                glRotatef(plane.angle, 0.0f, 1.0f, 0.0f); // Rotate plane based on movement
+                drawPlane();
+            glPopMatrix();
         }
     }
 
-    airport();
-    x2 += 15.0;
-
-    if (yaxis[0] >= -2 && yaxis[0] <= 6.7) x[0] += 3.5;
-    if (yaxis[0] <= 0) yaxis[0] += 0.15;
-    else if (yaxis[0] >= 0 && yaxis[0] <= 6.7) yaxis[0] += 0.06;
-    else if (yaxis[0] >= 6.7) yaxis[0] += 0.1;
-
-    glFlush();
     glutSwapBuffers();
 }
 
-void doInit() {
-    glClearColor(1.0, 1.0, 1.0, 1.0);  // Set background to white
+// Idle callback for animation
+void idle() {
+    bool needRedisplay = false;
+
+    for(auto &plane : planes) {
+        if(plane.active) {
+            if(plane.state == LANDING) {
+                // Move plane towards the runway
+                plane.x += plane.speed * cosf(45.0f * M_PI / 180.0f); // Diagonal movement
+                plane.z -= plane.speed * sinf(45.0f * M_PI / 180.0f);
+
+                // Rotate plane to face the runway
+                plane.angle = 45.0f;
+
+                // Check if plane has landed
+                if(plane.z <= 0.0f && plane.x >= -1.0f && plane.x <= 1.0f) {
+                    plane.active = false; // Plane has landed
+                }
+            }
+            else if(plane.state == TAKING_OFF) {
+                // Move plane away from the runway
+                plane.x -= plane.speed * cosf(45.0f * M_PI / 180.0f); // Diagonal movement
+                plane.z += plane.speed * sinf(45.0f * M_PI / 180.0f);
+
+                // Rotate plane to face away
+                plane.angle = -135.0f;
+
+                // Remove plane if it's far away
+                if(plane.x <= -20.0f || plane.z >= 20.0f) {
+                    plane.active = false;
+                }
+            }
+
+            needRedisplay = true;
+        }
+    }
+
+    // Remove inactive planes from the vector
+    planes.erase(std::remove_if(planes.begin(), planes.end(),
+                                [](const Plane &p) { return !p.active; }),
+                planes.end());
+
+    if(needRedisplay) {
+        glutPostRedisplay();
+    }
+}
+
+// Function to add a new plane
+void addPlane(PlaneState state) {
+    if(planes.size() >= 10) { // Limit the number of planes
+        return;
+    }
+    planes.emplace_back(state);
+}
+
+// Menu callback
+void menu(int option) {
+    switch(option) {
+        case 1: // Land a plane
+            addPlane(LANDING);
+            break;
+        case 2: // Take off a plane
+            addPlane(TAKING_OFF);
+            break;
+        case 3: // Quit
+            exit(0);
+            break;
+        default:
+            break;
+    }
+    glutPostRedisplay();
+}
+
+// Initialize OpenGL settings
+void initGL() {
+    glClearColor(0.529f, 0.808f, 0.922f, 1.0f); // Sky blue background
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+
+    // Set up light parameters
+    GLfloat light_pos[] = { 0.0f, 20.0f, 20.0f, 1.0f };
+    GLfloat light_ambient[] = { 0.3f, 0.3f, 0.3f, 1.0f };
+    GLfloat light_diffuse[] = { 0.7f, 0.7f, 0.7f, 1.0f };
+    GLfloat light_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    glLightfv(GL_LIGHT0, GL_POSITION, light_pos);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+    glShadeModel(GL_SMOOTH);
+}
+
+// Reshape callback to handle window resizing
+void reshape(int width, int height) {
+    if(height == 0) height = 1; // Prevent division by zero
+    float aspect = (float)width / (float)height;
+
+    glViewport(0, 0, width, height);
+
+    // Set projection matrix
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(45.0, 1.0, 1.0, 200.0);
+    gluPerspective(45.0f, aspect, 1.0f, 100.0f);
+
+    // Return to modelview matrix mode
     glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
 }
 
 // Main function
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
+    // Initialize GLUT
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-    glutInitWindowSize(800, 600);
+    glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+    glutInitWindowPosition(100, 100);
     glutCreateWindow("Airport Simulation");
-    doInit();
-    glutDisplayFunc(controller);
-    glutIdleFunc(controller);
-    glEnable(GL_DEPTH_TEST);
+
+    // Initialize OpenGL settings
+    initGL();
+
+    // Register callbacks
+    glutDisplayFunc(display);
+    glutReshapeFunc(reshape);
+    glutIdleFunc(idle);
+
+    // Create right-click menu
+    glutCreateMenu(menu);
+    glutAddMenuEntry("Land a Plane", 1);
+    glutAddMenuEntry("Take Off a Plane", 2);
+    glutAddMenuEntry("Quit", 3);
+    glutAttachMenu(GLUT_RIGHT_BUTTON);
+
+    // Enter the main loop
     glutMainLoop();
+
     return 0;
 }
